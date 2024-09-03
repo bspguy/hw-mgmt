@@ -173,9 +173,9 @@ index 02470474846e..07c9151d75fe 100644
 +		.mask = MLXPLAT_CPLD_LED_LO_NIBBLE_MASK
 +	},
 +	{
-+		.label = "power:green",
++		.label = "fault:green",
 +		.reg = MLXPLAT_CPLD_LPC_REG_LED1_OFFSET,
-+		.mask = MLXPLAT_CPLD_LED_HI_NIBBLE_MASK,
++		.mask = MLXPLAT_CPLD_LED_LO_NIBBLE_MASK,
 +	},
 +	{
 +		.label = "power:amber",
