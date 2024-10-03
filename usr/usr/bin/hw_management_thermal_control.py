@@ -195,6 +195,10 @@ class CONST(object):
     DRWR_ERR_LIST = [DIRECTION, TACHO, PRESENT, SENSOR_READ_ERR]
     PSU_ERR_LIST = [DIRECTION, PRESENT, SENSOR_READ_ERR]
 
+    # Redundancy const definition
+    REDUNDANCY_MIN_ERR_CNT = "min_err_cnt"
+    REDUNDANCY_ERR_MASK = "err_mask"
+
 """
 Default sensor  configuration.
 Defined per sensor name. Sensor name can be defined with the regexp mask.
@@ -304,12 +308,12 @@ SENSOR_DEF_CONFIG = {
 
 # PSU/FAN redundancy define example:
 """
-"redundancy" : {"psu" : {"min_err_cnt" : "0", "err_mask" : "present"},
-                "drwr" : {"min_err_cnt" : "0", "err_mask" : null}},
+"redundancy" : {"psu_err" : {"min_err_cnt" : "0", "err_mask" : "present"},
+                "fan_err" : {"min_err_cnt" : "0"},
 """
 # Error mask example:
 """
-"error_mask" : {"psu" : ["direction"]},
+"error_mask" : {"psu_err" : ["direction"], "fan_err" : ["direction"]},
 """
 
 #############################################
@@ -2514,7 +2518,7 @@ class ThermalManagement(hw_managemet_file_op):
         self.module_counter = 0
         self.gearbox_counter = 0
         self.dev_err_exclusion_conf = {}
-        self.obj_init_continue = True
+        self.obj_init_pending = True
 
     # ---------------------------------------------------------------------
     def _collect_hw_info(self):
@@ -2640,7 +2644,7 @@ class ThermalManagement(hw_managemet_file_op):
         child_list = dev_obj.get_child_list()
         if child_list:
             self.add_sensors(child_list)
-            self.obj_init_continue = True
+            self.obj_init_pending = True
         return dev_obj
 
     # ----------------------------------------------------------------------
@@ -3040,8 +3044,10 @@ class ThermalManagement(hw_managemet_file_op):
         exclusion_conf = get_dict_val_by_path(self.sys_config, [CONST.SYS_CONF_REDUNDANCY_PARAM, CONST.PSU_ERR])
         err_mask = None
         if exclusion_conf:
-            self.dev_err_exclusion_conf[CONST.PSU_ERR] = {"name_mask": "psu\d+_fan", "min_err_cnt" : 2, "curr_err_cnt" : 0}
-            err_mask = exclusion_conf.get("err_mask", None)
+            if CONST.PSU_ERR not in self.dev_err_exclusion_conf:
+                self.dev_err_exclusion_conf[CONST.PSU_ERR] = {"name_mask": "psu\d+_fan"}
+                self.dev_err_exclusion_conf[CONST.PSU_ERR][CONST.REDUNDANCY_MIN_ERR_CNT] = int(exclusion_conf.get(CONST.REDUNDANCY_MIN_ERR_CNT, 1))
+            err_mask = exclusion_conf.get(CONST.REDUNDANCY_ERR_MASK, None)
             if not err_mask:
                 err_mask = CONST.DRWR_ERR_LIST
         self._sensor_add_config("psu_fan_sensor", psu_name, {"base_file_name": in_file, "dynamic_err_mask": err_mask})
@@ -3055,8 +3061,10 @@ class ThermalManagement(hw_managemet_file_op):
         exclusion_conf = get_dict_val_by_path(self.sys_config, [CONST.SYS_CONF_REDUNDANCY_PARAM, CONST.FAN_ERR])
         err_mask = None
         if exclusion_conf:
-            self.dev_err_exclusion_conf[CONST.FAN_ERR] = {"name_mask": "drwr\d+", "min_err_cnt" : 2, "curr_err_cnt": 0}
-            err_mask = exclusion_conf.get("err_mask", None)
+            if CONST.FAN_ERR not in self.dev_err_exclusion_conf:
+                self.dev_err_exclusion_conf[CONST.FAN_ERR] = {"name_mask": "drwr\d+"}
+                self.dev_err_exclusion_conf[CONST.FAN_ERR][CONST.REDUNDANCY_MIN_ERR_CNT] = int(exclusion_conf.get(CONST.REDUNDANCY_MIN_ERR_CNT, 1))
+            err_mask = exclusion_conf.get(CONST.REDUNDANCY_ERR_MASK, None)
             if not err_mask:
                 err_mask = CONST.PSU_ERR_LIST
         self._sensor_add_config("fan_sensor", name, {"base_file_name": name,
@@ -3212,8 +3220,8 @@ class ThermalManagement(hw_managemet_file_op):
 
         self.log.debug("System config dump\n{}".format(json.dumps(self.sys_config, sort_keys=True, indent=4)))
 
-        while self.obj_init_continue:
-            self.obj_init_continue = False
+        while self.obj_init_pending:
+            self.obj_init_pending = False
             sys_config = dict(self.sys_config[CONST.SYS_CONF_SENSORS_CONF])
             for key, _ in sys_config.items():
                 dev_obj = self._add_dev_obj(key)
@@ -3358,7 +3366,7 @@ class ThermalManagement(hw_managemet_file_op):
 
                     for name, conf in self.dev_err_exclusion_conf.items():
                         # don't need to check if min error not set
-                        min_num = conf.get("min_err_cnt", 0)
+                        min_num = conf.get(CONST.REDUNDANCY_MIN_ERR_CNT, 0)
                         if not min_num:
                             continue
                         name_mask = conf["name_mask"]
